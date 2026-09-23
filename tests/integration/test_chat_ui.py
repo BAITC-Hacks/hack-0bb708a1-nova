@@ -19,7 +19,7 @@ class ChatUITests(unittest.TestCase):
             app.chat_input[0].set_value("Мероприятие 2026").run()
             self.assertFalse(app.exception)
             self.assertEqual(len(app.subheader), 0)
-            self.assertEqual(app.button(key="confirm_chat").label, "Подтвердить и найти")
+            self.assertEqual(app.button(key="confirm_chat").label, "Найти подрядчиков")
             app.button(key="confirm_chat").click().run()
             self.assertFalse(app.exception)
             self.assertIsNotNone(app.session_state.conversation.last_result)
@@ -31,7 +31,8 @@ class ChatUITests(unittest.TestCase):
             self.assertEqual(app.session_state.conversation.last_result["status"], "NO_MATCH")
             app.button(key="reset_chat").click().run()
             self.assertIsNone(app.session_state.conversation.last_result)
-            self.assertEqual(len(app.chat_message), 1)
+            self.assertEqual(len(app.chat_message), 0)
+            self.assertTrue(any("Опишите мероприятие" in m.value for m in app.markdown))
 
     def test_off_topic_does_not_produce_cards(self):
         backend = Mock()

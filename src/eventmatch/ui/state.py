@@ -31,6 +31,7 @@ def apply_demo(session):
 
 
 def initialize_manual(session):
+    session.setdefault("demo_choice", next(iter(DEMOS)))
     if "city" not in session:
         apply_demo(session)
     if session.get("event_date") is not None:
