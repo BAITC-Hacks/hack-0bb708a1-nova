@@ -25,7 +25,7 @@ class OpenAIBackend:
     def __init__(self):
         key, self.model = configuration()
         if not key:
-            raise AgentError("Чат пока не настроен: добавьте OPENAI_API_KEY в .env. Подбор через форму доступен.")
+            raise AgentError("Чат пока недоступен. Воспользуйтесь вкладкой «Поиск по параметрам».")
         # Explicit official endpoint: an unrelated inherited proxy must not receive the key.
         self.client = OpenAI(api_key=key, base_url="https://api.openai.com/v1", timeout=25.0, max_retries=0)
 
@@ -41,11 +41,11 @@ class OpenAIBackend:
                 raise AgentError("Не удалось надёжно разобрать ответ. Переформулируйте запрос; поиск не запущен.")
             return response.output_parsed
         except AuthenticationError:
-            raise AgentError("Сервис чата не смог авторизоваться. Проверьте API-ключ; форма подбора доступна.") from None
+            raise AgentError("Чат временно недоступен. Вы можете продолжить во вкладке «Поиск по параметрам».") from None
         except RateLimitError:
-            raise AgentError("Сервис чата временно достиг лимита запросов. Попробуйте позже или используйте форму.") from None
+            raise AgentError("Сервис чата сейчас занят. Попробуйте позже или используйте «Поиск по параметрам».") from None
         except (APITimeoutError, APIConnectionError):
-            raise AgentError("Сервис чата не ответил вовремя. Ваши условия сохранены; повторите сообщение или используйте форму.") from None
+            raise AgentError("Чат не ответил вовремя. Ваши условия сохранены; повторите сообщение или используйте «Поиск по параметрам».") from None
         except (APIError, ValidationError, ValueError):
             raise AgentError("Не удалось получить корректный ответ сервиса чата. Условия не изменены; попробуйте ещё раз.") from None
 

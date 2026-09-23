@@ -11,8 +11,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from agent_models import TurnDecision
+from availability_window import DateOutsideWindow, WINDOW_MESSAGE, validate_event_date
 from llm_client import AgentError
 from matcher import Request, iso_date, money, normalized, recommend
+from presentation import result_message
 
 REQUIRED = ("city", "event_date", "event_type", "category", "budget_kzt")
 FIELDS = REQUIRED + ("duration_hours", "language")
@@ -25,7 +27,7 @@ QUESTIONS = {
     "duration_hours": "Сколько часов нужен подрядчик? Можно не задавать продолжительность.",
     "language": "Какой язык предпочитаете? Можно указать, что язык не важен.",
 }
-INTRO = "Здравствуйте! Я помогу подобрать подрядчиков. Расскажите, что планируете: где и когда пройдёт мероприятие, кого ищете и какой бюджет выделили. Можно начать с того, что уже известно."
+INTRO = "Расскажите, что вы планируете 👋"
 REDIRECTS = {
     "off_topic": "Я помогаю с подбором подрядчиков для мероприятий. Расскажите о вашем событии — город, дата и кого нужно найти.",
     "nonsense": "Не совсем поняла сообщение. Напишите, кого ищете и для какого мероприятия — разберём условия вместе.",
@@ -69,7 +71,7 @@ class Conversation:
 
 
 def summary(request: Request) -> str:
-    parts = [f"Город: {request.city}", f"Дата: {iso_date(request.event_date).strftime('%d.%m.%Y')}",
+    parts = [f"Локация: {request.city}", f"Дата: {iso_date(request.event_date).strftime('%d.%m.%Y')}",
              f"Мероприятие: {request.event_type}", f"Категория: {request.category}",
              f"Бюджет: до {money(request.budget_kzt)}"]
     if request.duration_hours is not None:
@@ -104,6 +106,7 @@ def validated_value(update, draft, catalog):
         # A model may not silently invent a year for the first date.
         if not draft.get("event_date") and not re.search(r"\b20\d{2}\b|сегодня|завтра", update.evidence, re.I):
             raise ValueError("Уточните, пожалуйста, год мероприятия.")
+        validate_event_date(value)
     values = {
         "city": {c.city for c in catalog},
         "category": {v for c in catalog for v in c.categories},
@@ -194,25 +197,35 @@ def handle_message(state: Conversation, text: str, catalog, backend):
     for update in decision.updates:
         try:
             value = validated_value(update, state.draft, catalog)
+        except DateOutsideWindow:
+            state.unresolved[update.field] = WINDOW_MESSAGE
+            continue
         except ValueError:
             state.unresolved[update.field] = QUESTIONS[update.field]
             continue
         state.draft[update.field] = value
         state.unresolved.pop(update.field, None)
     for ambiguity in decision.ambiguities:
+        if ambiguity.field == "event_date" and state.unresolved.get("event_date") == WINDOW_MESSAGE:
+            continue
         state.unresolved[ambiguity.field] = ambiguity.question if safe_reply(ambiguity.question) else QUESTIONS[ambiguity.field]
 
     missing = [key for key in REQUIRED if state.draft[key] is None]
     if state.unresolved or missing:
         # LLM supplies natural phrasing, but cannot skip the deterministic missing-fields check.
         if state.unresolved:
-            reply = next(iter(state.unresolved.values()))
+            reply = WINDOW_MESSAGE if state.unresolved.get("event_date") == WINDOW_MESSAGE else next(iter(state.unresolved.values()))
         else:
             reply = decision.reply if safe_reply(decision.reply) and "?" in decision.reply else QUESTIONS[missing[0]]
         state.add("assistant", reply)
     else:
         try:
+            validate_event_date(state.draft["event_date"])
             state.pending = Request(**state.draft)
+        except DateOutsideWindow:
+            state.unresolved["event_date"] = WINDOW_MESSAGE
+            state.add("assistant", WINDOW_MESSAGE)
+            return
         except ValueError:
             state.add("assistant", "Проверьте дату, бюджет и продолжительность: условия пока не удалось подтвердить.")
             return
@@ -236,8 +249,8 @@ def reset(state):
     state.add("assistant", "Начнём новый подбор. " + INTRO)
 
 
-def outcome_text(result):
-    text = result["message"]
+def outcome_text(result, request):
+    text = result_message(result, request)
     if result["status"] == "NO_MATCH":
         suggestions = []
         for key, suggestion in (("busy", "другую дату"), ("budget", "другой бюджет"),
@@ -246,7 +259,7 @@ def outcome_text(result):
                 suggestions.append(suggestion)
         text += " Если ваши планы позволяют, можем проверить " + ", ".join(suggestions) + ". Что хотите изменить?"
     elif result["status"] == "CATEGORY_NOT_FOUND":
-        text += " Можем проверить другую категорию или город — что вам подходит?"
+        text += " Можем проверить другую категорию или локацию — что вам подходит?"
     else:
         text += " Можно уточнить бюджет, дату или другие условия — я сделаю новый подбор."
     return text
@@ -257,6 +270,13 @@ def confirm_search(state, catalog, backend):
     if request is None or state.unresolved or asdict(request) != state.draft:
         state.pending = None
         state.add("assistant", "Сначала нужно подтвердить актуальные условия. " + next_question(state))
+        return
+    try:
+        validate_event_date(request.event_date)
+    except DateOutsideWindow:
+        state.pending = None
+        state.unresolved["event_date"] = WINDOW_MESSAGE
+        state.add("assistant", WINDOW_MESSAGE)
         return
     state.pending = None  # Consume confirmation before dispatch; reruns cannot repeat it.
     result = recommend(catalog, request)
@@ -280,7 +300,7 @@ def confirm_search(state, catalog, backend):
         if len(explanations) == len(result["cards"]):
             source = "ai"
     state.last_request, state.last_result = request, result
-    text = outcome_text(result)
+    text = outcome_text(result, request)
     state.add("assistant", text, result=result, request=request, explanation_source=source)
     state.context.extend([{"role": "assistant", "content": "Условия подтверждены. " + summary(request)},
                           {"role": "assistant", "content": text}])
