@@ -5,14 +5,12 @@ import unittest
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from demo import DEFAULT_CATALOG, DEMOS
-from matcher import CatalogError, Contractor, Request, filter_candidates, load_catalog, recommend
+from eventmatch.paths import DEFAULT_CATALOG
+from eventmatch.ui.demo_scenarios import DEMOS
+from eventmatch.domain.matcher import CatalogError, Request, filter_candidates, load_catalog, recommend
 
 
-BASE = Contractor("a", "Тестовый ведущий", ("Ведущий",), "Алматы", 600_000,
-                  ("свадьба",), ("русский",), 8, (),
-                  "Ведущий: свадьба, интерактивные игры и импровизация.", True, False, False)
-QUERY = Request("Алматы", "2026-11-14", "свадьба", "Ведущий", 800_000, 6, "русский")
+from tests.support import BASE, QUERY
 
 
 class MatchingTests(unittest.TestCase):

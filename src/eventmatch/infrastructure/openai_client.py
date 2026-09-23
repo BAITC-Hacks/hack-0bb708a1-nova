@@ -2,22 +2,18 @@
 import json
 import os
 from dataclasses import asdict
-from pathlib import Path
+from eventmatch.paths import ENV_FILE
 
 from dotenv import load_dotenv
 from openai import APIConnectionError, APIError, APITimeoutError, AuthenticationError, OpenAI, RateLimitError
 from pydantic import ValidationError
 
-from agent_models import TurnDecision, VerifiedCards, WrittenCards
-from prompts import EXPLAIN_PROMPT, PARSE_PROMPT, VERIFY_PROMPT
-
-
-class AgentError(Exception):
-    """Safe, user-facing Russian message; never contains an API exception body."""
+from eventmatch.ai.models import AgentError, TurnDecision, VerifiedCards, WrittenCards
+from eventmatch.ai.prompts import EXPLAIN_PROMPT, PARSE_PROMPT, VERIFY_PROMPT
 
 
 def configuration():
-    load_dotenv(Path(__file__).with_name(".env"), override=False)
+    load_dotenv(ENV_FILE, override=False)
     return os.getenv("OPENAI_API_KEY", "").strip(), os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
 

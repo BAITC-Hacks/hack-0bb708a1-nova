@@ -1,15 +1,15 @@
 """UI smoke tests use Streamlit's bundled test runner; no browser needed."""
 import unittest
-from pathlib import Path
+from tests.support import ROOT
 
 from streamlit.testing.v1 import AppTest
 
-from demo import DEMOS
+from eventmatch.ui.demo_scenarios import DEMOS
 
 
 class AppTests(unittest.TestCase):
     def test_all_demo_outcomes_and_input_changes(self):
-        app = AppTest.from_file(str(Path(__file__).with_name("app.py")), default_timeout=20).run()
+        app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=20).run()
         self.assertFalse(app.exception)
         for index, title in enumerate(DEMOS):
             app.selectbox(key="demo_choice").select(title).run()

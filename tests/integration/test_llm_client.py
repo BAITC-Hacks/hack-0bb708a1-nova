@@ -5,20 +5,20 @@ from unittest.mock import Mock, patch
 import httpx
 from openai import APIConnectionError, AuthenticationError, RateLimitError
 
-from agent_models import CardVerdict, TurnDecision, VerifiedCards, WrittenCard, WrittenCards
-from llm_client import AgentError, OpenAIBackend
-from matcher import recommend
-from test_matcher import BASE, QUERY
+from eventmatch.ai.models import CardVerdict, TurnDecision, VerifiedCards, WrittenCard, WrittenCards
+from eventmatch.infrastructure.openai_client import AgentError, OpenAIBackend
+from eventmatch.domain.matcher import recommend
+from tests.support import BASE, QUERY
 
 
 class BackendTests(unittest.TestCase):
     def setUp(self):
         self.client = Mock()
-        with patch("llm_client.configuration", return_value=("test-placeholder", "test-model")), patch("llm_client.OpenAI", return_value=self.client):
+        with patch("eventmatch.infrastructure.openai_client.configuration", return_value=("test-placeholder", "test-model")), patch("eventmatch.infrastructure.openai_client.OpenAI", return_value=self.client):
             self.backend = OpenAIBackend()
 
     def test_missing_key_is_safe(self):
-        with patch("llm_client.configuration", return_value=("", "test-model")), self.assertRaises(AgentError):
+        with patch("eventmatch.infrastructure.openai_client.configuration", return_value=("", "test-model")), self.assertRaises(AgentError):
             OpenAIBackend()
 
     def test_parse_uses_schema_no_storage_and_no_tools(self):

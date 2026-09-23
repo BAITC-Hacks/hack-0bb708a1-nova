@@ -1,4 +1,1 @@
-streamlit==1.64.0
-openai>=2,<3
-python-dotenv>=1,<2
-pydantic>=2,<3
+-e .[test]

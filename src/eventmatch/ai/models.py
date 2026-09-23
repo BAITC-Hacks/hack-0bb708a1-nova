@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field
 FieldName = Literal["city", "event_date", "event_type", "category", "budget_kzt", "duration_hours", "language"]
 
 
+class AgentError(Exception):
+    """Provider-independent failure with a safe, user-facing Russian message."""
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 

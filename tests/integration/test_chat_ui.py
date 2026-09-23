@@ -1,11 +1,11 @@
 import unittest
-from pathlib import Path
+from tests.support import ROOT
 from unittest.mock import Mock, patch
 
 from streamlit.testing.v1 import AppTest
 
-from agent_models import TurnDecision, Update
-from test_conversation import complete_decision, decision
+from eventmatch.ai.models import TurnDecision, Update
+from tests.support import complete_decision, decision
 
 
 class ChatUITests(unittest.TestCase):
@@ -13,8 +13,8 @@ class ChatUITests(unittest.TestCase):
         backend = Mock()
         backend.parse.return_value = complete_decision()
         backend.explain.return_value = {}
-        with patch("llm_client.OpenAIBackend", return_value=backend):
-            app = AppTest.from_file(str(Path(__file__).with_name("app.py")), default_timeout=20).run()
+        with patch("eventmatch.infrastructure.openai_client.OpenAIBackend", return_value=backend):
+            app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=20).run()
             self.assertFalse(app.exception)
             app.chat_input[0].set_value("Мероприятие 2026").run()
             self.assertFalse(app.exception)
@@ -36,8 +36,8 @@ class ChatUITests(unittest.TestCase):
     def test_off_topic_does_not_produce_cards(self):
         backend = Mock()
         backend.parse.return_value = TurnDecision(intent="off_topic", updates=[], ambiguities=[], reply="Давайте вернёмся к подбору.")
-        with patch("llm_client.OpenAIBackend", return_value=backend):
-            app = AppTest.from_file(str(Path(__file__).with_name("app.py")), default_timeout=20).run()
+        with patch("eventmatch.infrastructure.openai_client.OpenAIBackend", return_value=backend):
+            app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=20).run()
             app.chat_input[0].set_value("Расскажи про космос").run()
             self.assertFalse(app.exception)
             self.assertIsNone(app.session_state.conversation.pending)

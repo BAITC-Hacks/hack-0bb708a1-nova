@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eventmatch"
+version = "0.1.0"
+description = "Conversational event-contractor search with deterministic recommendations"
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit==1.64.0",
+    "openai>=2,<3",
+    "python-dotenv>=1,<2",
+    "pydantic>=2,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["eventmatch*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

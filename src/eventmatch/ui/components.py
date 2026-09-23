@@ -3,7 +3,7 @@ import re
 
 import streamlit as st
 
-from matcher import money
+from eventmatch.domain.matcher import money
 
 
 def prose(text):
@@ -12,7 +12,8 @@ def prose(text):
     st.markdown(escaped.replace("\n", "  \n"))
 
 
-def render_cards(result, request):
+def render_cards(result, request, explanations=None):
+    explanations = explanations or {}
     for card in result["cards"]:
         c = card["contractor"]
         with st.container(border=True):
@@ -30,7 +31,7 @@ def render_cards(result, request):
                 st.caption(" · ".join(labels))
             # Preserve verified LLM explanations; remove only a redundant prefix
             # from deterministic fallback text, without changing any facts.
-            explanation = card["explanation"]
+            explanation = explanations.get(c.id, card["explanation"])
             prefix = f"«{c.anon_name}» ({request.category}, {c.city})"
             if explanation.startswith(prefix):
                 explanation = c.anon_name + explanation[len(prefix):]

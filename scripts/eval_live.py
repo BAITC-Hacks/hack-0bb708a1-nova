@@ -5,10 +5,10 @@ Uses the local API key and incurs a small number of API calls. Prints no credent
 import argparse
 from types import SimpleNamespace
 
-from conversation import REDIRECTS, Conversation, build_payload, confirm_search, handle_message
-from demo import CATALOG_PATH
-from llm_client import AgentError, OpenAIBackend
-from matcher import load_catalog, recommend
+from eventmatch.application.conversation import REDIRECTS, Conversation, build_payload, confirm_search, handle_message
+from eventmatch.paths import CATALOG_PATH
+from eventmatch.infrastructure.openai_client import AgentError, OpenAIBackend
+from eventmatch.domain.matcher import load_catalog, recommend
 
 
 def conversation_checks(catalog, backend):

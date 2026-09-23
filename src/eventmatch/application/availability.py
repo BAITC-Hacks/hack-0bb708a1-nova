@@ -1,7 +1,7 @@
 """Product calendar coverage, validated before calling the unchanged matcher."""
 from datetime import date
 
-from matcher import iso_date
+from eventmatch.domain.matcher import iso_date
 
 FIRST_DATE = date(2026, 9, 23)
 LAST_DATE = date(2026, 12, 31)

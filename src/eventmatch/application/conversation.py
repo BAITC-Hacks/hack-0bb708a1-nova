@@ -5,16 +5,16 @@ Only confirm_search() calls the unchanged matcher. LLMs have no matching tool.
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from agent_models import TurnDecision
-from availability_window import DateOutsideWindow, WINDOW_MESSAGE, validate_event_date
-from llm_client import AgentError
-from matcher import Request, iso_date, money, normalized, recommend
-from presentation import result_message
+from eventmatch.ai.models import AgentError, TurnDecision
+from eventmatch.application.availability import DateOutsideWindow, WINDOW_MESSAGE, validate_event_date
+from eventmatch.domain.matcher import Request, iso_date, normalized, recommend
+from eventmatch.application.presentation import confirmation_text, outcome_text, summary
 
 REQUIRED = ("city", "event_date", "event_type", "category", "budget_kzt")
 FIELDS = REQUIRED + ("duration_hours", "language")
@@ -51,6 +51,7 @@ class Message:
     result: dict | None = None
     request: Request | None = None
     explanation_source: str | None = None
+    explanations: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -68,21 +69,6 @@ class Conversation:
         # Bound in-session memory; the structured draft survives context truncation.
         self.messages.append(Message(role, text, **kwargs))
         self.messages = self.messages[-80:]
-
-
-def summary(request: Request) -> str:
-    parts = [f"Локация: {request.city}", f"Дата: {iso_date(request.event_date).strftime('%d.%m.%Y')}",
-             f"Мероприятие: {request.event_type}", f"Категория: {request.category}",
-             f"Бюджет: до {money(request.budget_kzt)}"]
-    if request.duration_hours is not None:
-        parts.append(f"Продолжительность: {request.duration_hours:g} ч")
-    if request.language:
-        parts.append(f"Предпочитаемый язык: {request.language}")
-    return "\n".join(parts)
-
-
-def confirmation_text(request):
-    return "Проверим, правильно ли я поняла:\n\n" + summary(request) + "\n\nВсё верно — искать по этим условиям? Можно подтвердить или поправить детали."
 
 
 def safe_reply(text):
@@ -186,6 +172,11 @@ def handle_message(state: Conversation, text: str, catalog, backend):
             state.add("assistant", "Сначала уточним условия. " + next_question(state))
         return
 
+    apply_updates(state, text, decision, catalog)
+
+
+def apply_updates(state, text, decision, catalog):
+    """Validate explicit field changes, then clarify or prepare confirmation."""
     state.pending = None
     fields_seen = set()
     # Validate the complete patch before applying any mutation (atomic on invalid evidence).
@@ -249,22 +240,6 @@ def reset(state):
     state.add("assistant", "Начнём новый подбор. " + INTRO)
 
 
-def outcome_text(result, request):
-    text = result_message(result, request)
-    if result["status"] == "NO_MATCH":
-        suggestions = []
-        for key, suggestion in (("busy", "другую дату"), ("budget", "другой бюджет"),
-                                ("duration", "меньшую продолжительность"), ("event_format", "другой формат")):
-            if result["rejections"].get(key):
-                suggestions.append(suggestion)
-        text += " Если ваши планы позволяют, можем проверить " + ", ".join(suggestions) + ". Что хотите изменить?"
-    elif result["status"] == "CATEGORY_NOT_FOUND":
-        text += " Можем проверить другую категорию или локацию — что вам подходит?"
-    else:
-        text += " Можно уточнить бюджет, дату или другие условия — я сделаю новый подбор."
-    return text
-
-
 def confirm_search(state, catalog, backend):
     request = state.pending
     if request is None or state.unresolved or asdict(request) != state.draft:
@@ -280,28 +255,34 @@ def confirm_search(state, catalog, backend):
         return
     state.pending = None  # Consume confirmation before dispatch; reruns cannot repeat it.
     result = recommend(catalog, request)
-    source = "facts"
+    explanations, source = get_explanations(state, request, result, backend)
+    state.last_request, state.last_result = request, result
+    text = outcome_text(result, request)
+    state.add("assistant", text, result=result, request=request, explanation_source=source, explanations=explanations)
+    state.context.extend([{"role": "assistant", "content": "Условия подтверждены. " + summary(request)},
+                          {"role": "assistant", "content": text}])
+    state.context = state.context[-12:]
+
+
+def get_explanations(state, request, result, backend):
+    """Optional wording keyed by selected ID; selection facts stay untouched."""
+    explanations = {}
     if result["cards"]:
         cache_key = (request, tuple(c["contractor"] for c in result["cards"]))
         explanations = state.explanation_cache.get(cache_key)
         if explanations is None:
             try:
-                explanations = backend.explain(request, result)
+                explanations = backend.explain(request, deepcopy(result))
             except AgentError:
                 explanations = {}
             if explanations:
                 if len(state.explanation_cache) >= 20:
                     state.explanation_cache.pop(next(iter(state.explanation_cache)))
                 state.explanation_cache[cache_key] = explanations
-        for card in result["cards"]:
-            if card["contractor"].id in explanations:
-                card["explanation"] = explanations[card["contractor"].id]
-                source = "mixed"
-        if len(explanations) == len(result["cards"]):
-            source = "ai"
-    state.last_request, state.last_result = request, result
-    text = outcome_text(result, request)
-    state.add("assistant", text, result=result, request=request, explanation_source=source)
-    state.context.extend([{"role": "assistant", "content": "Условия подтверждены. " + summary(request)},
-                          {"role": "assistant", "content": text}])
-    state.context = state.context[-12:]
+    selected_ids = {card["contractor"].id for card in result["cards"]}
+    explanations = {key: text for key, text in explanations.items()
+                    if key in selected_ids and isinstance(text, str) and text}
+    source = "facts"
+    if explanations:
+        source = "ai" if len(explanations) == len(selected_ids) else "mixed"
+    return explanations, source

@@ -1,38 +1,20 @@
 """Original manual form and demos, retained alongside chat."""
-from datetime import date
-
 import streamlit as st
 
-from demo import DEMOS
-from matcher import Request, recommend
-from availability_window import DateOutsideWindow, FIRST_DATE, LAST_DATE, WINDOW_LABEL, WINDOW_MESSAGE, validate_event_date
-from presentation import result_message
-from ui_components import prose, render_cards
+from eventmatch.ui.demo_scenarios import DEMOS
+from eventmatch.domain.matcher import Request, recommend
+from eventmatch.application.availability import FIRST_DATE, LAST_DATE, WINDOW_LABEL, validate_event_date
+from eventmatch.application.presentation import result_message
+from eventmatch.ui.components import prose, render_cards
+from eventmatch.ui.state import apply_demo, initialize_manual
 
 
 def render_manual(catalog):
-    def apply_demo():
-        request = DEMOS[st.session_state.demo_choice]
-        st.session_state.update(
-            city=request.city, event_date=date.fromisoformat(request.event_date),
-            event_type=request.event_type, category=request.category,
-            budget=int(request.budget_kzt), duration=float(request.duration_hours or 0),
-            language=request.language or "Не важно",
-        )
-
-
     with st.expander("Демо-сценарии"):
-        st.selectbox("Выберите сценарий", list(DEMOS), key="demo_choice", on_change=apply_demo)
-    if "city" not in st.session_state:
-        apply_demo()
-    if st.session_state.get("event_date") is not None:
-        try:
-            validate_event_date(st.session_state.event_date)
-        except DateOutsideWindow:
-            # A pre-polish browser session may contain an unsupported date.
-            # Ask for a new choice rather than silently clamping the old date.
-            st.session_state.event_date = None
-            st.info(WINDOW_MESSAGE)
+        st.selectbox("Выберите сценарий", list(DEMOS), key="demo_choice",
+                     on_change=apply_demo, args=(st.session_state,))
+    if notice := initialize_manual(st.session_state):
+        st.info(notice)
 
     # Keep widgets outside a form so changing inputs immediately removes stale results.
     left, right = st.columns(2)

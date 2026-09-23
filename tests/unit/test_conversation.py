@@ -2,19 +2,14 @@ import unittest
 from dataclasses import asdict
 from unittest.mock import Mock, patch
 
-from agent_models import Ambiguity, TurnDecision, Update
-from conversation import Conversation, confirm_search, handle_message, reset
-from llm_client import AgentError
-from matcher import recommend
-from test_matcher import BASE, QUERY
+from eventmatch.ai.models import Ambiguity, Update
+from eventmatch.application.conversation import Conversation, confirm_search, handle_message, reset
+from eventmatch.ai.models import AgentError
+from eventmatch.domain.matcher import recommend
+from tests.support import BASE, QUERY
 
 
-def decision(intent="request", updates=None, ambiguities=None, reply="Какой бюджет в тенге?"):
-    return TurnDecision(intent=intent, updates=updates or [], ambiguities=ambiguities or [], reply=reply)
-
-
-def complete_decision():
-    return decision(updates=[Update(field=k, value=v, evidence="2026") for k, v in asdict(QUERY).items()])
+from tests.support import complete_decision, decision
 
 
 class ConversationTests(unittest.TestCase):
@@ -33,7 +28,7 @@ class ConversationTests(unittest.TestCase):
         self.assertEqual(self.state.pending, QUERY)
 
     def test_full_request_needs_confirmation_then_same_matcher_result(self):
-        with patch("conversation.recommend", wraps=recommend) as matcher:
+        with patch("eventmatch.application.conversation.recommend", wraps=recommend) as matcher:
             self.ready()
             matcher.assert_not_called()
             handle_message(self.state, "да", self.catalog, self.backend)
@@ -62,7 +57,7 @@ class ConversationTests(unittest.TestCase):
         self.send("а подешевле?", decision(ambiguities=[Ambiguity(field="budget_kzt", question="До какой суммы в тенге ищем?")]))
         self.assertEqual(self.state.draft["budget_kzt"], QUERY.budget_kzt)
         self.assertIsNone(self.state.pending)
-        with patch("conversation.recommend") as matcher:
+        with patch("eventmatch.application.conversation.recommend") as matcher:
             confirm_search(self.state, self.catalog, self.backend)
             matcher.assert_not_called()
         self.send("до 500000", decision(updates=[Update(field="budget_kzt", value=500000, evidence="500000")]))
@@ -71,7 +66,7 @@ class ConversationTests(unittest.TestCase):
 
     def test_unsafe_and_offtopic_patches_cannot_mutate_or_search(self):
         for intent in ("unsafe", "injection", "off_topic", "nonsense", "abusive"):
-            with self.subTest(intent=intent), patch("conversation.recommend") as matcher:
+            with self.subTest(intent=intent), patch("eventmatch.application.conversation.recommend") as matcher:
                 self.state = Conversation(draft=asdict(QUERY), pending=QUERY)
                 self.send("плохой запрос", decision(intent, [Update(field="city", value="Астана", evidence="запрос")]))
                 self.assertEqual(self.state.draft, asdict(QUERY))
@@ -87,14 +82,14 @@ class ConversationTests(unittest.TestCase):
 
     def test_natural_confirmation_uses_existing_snapshot(self):
         self.ready()
-        with patch("conversation.recommend", wraps=recommend) as matcher:
+        with patch("eventmatch.application.conversation.recommend", wraps=recommend) as matcher:
             self.send("ага, согласен", decision("confirm"))
             matcher.assert_called_once_with(self.catalog, QUERY)
         self.assertIsNone(self.state.pending)
 
     def test_model_confirmation_cannot_smuggle_changes(self):
         self.ready()
-        with patch("conversation.recommend") as matcher:
+        with patch("eventmatch.application.conversation.recommend") as matcher:
             self.send("Да, но другой город", decision("confirm", [Update(field="city", value="Астана", evidence="город")]))
             matcher.assert_not_called()
         self.assertEqual(self.state.draft, asdict(QUERY))
@@ -129,7 +124,7 @@ class ConversationTests(unittest.TestCase):
     def test_bare_confirmation_cannot_repeat_search(self):
         self.ready()
         confirm_search(self.state, self.catalog, self.backend)
-        with patch("conversation.recommend") as matcher:
+        with patch("eventmatch.application.conversation.recommend") as matcher:
             confirm_search(self.state, self.catalog, self.backend)
             matcher.assert_not_called()
 
@@ -156,7 +151,7 @@ class ConversationTests(unittest.TestCase):
     def test_api_error_preserves_draft_and_never_searches(self):
         self.ready()
         self.backend.parse.side_effect = AgentError("Сервис временно недоступен.")
-        with patch("conversation.recommend") as matcher:
+        with patch("eventmatch.application.conversation.recommend") as matcher:
             handle_message(self.state, "другая дата", self.catalog, self.backend)
             matcher.assert_not_called()
         self.assertEqual(self.state.draft, asdict(QUERY))
